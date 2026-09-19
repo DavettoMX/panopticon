@@ -1,0 +1,79 @@
+:root {
+  --primary: #4b3f5f;
+  --primary-light: #5e5077;
+  --primary-dark: #3a3049;
+
+  --bg: #1a1a2e;
+  --bg-sidebar: #16162a;
+  --bg-input: #252540;
+  --bg-hover: #2a2a45;
+  --bg-card: #20203a;
+
+  --text: #a0a0b8;
+  --text-bright: #e0e0f0;
+  --text-muted: #6a6a88;
+
+  --border: #2e2e4a;
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 14px/1.5 var(--sans);
+  color-scheme: dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+}
+
+button {
+  font-family: var(--sans);
+  border: none;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+input, textarea {
+  font-family: var(--sans);
+  border: none;
+  background: none;
+  color: var(--text-bright);
+  outline: none;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
