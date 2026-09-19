@@ -1,0 +1,11 @@
+{
+  "name": "panopticon",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "tauri": "WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4"
+  }
+}
