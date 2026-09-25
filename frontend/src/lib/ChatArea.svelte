@@ -1,16 +1,98 @@
 <script lang="ts">
-  import { Send, Plus, Settings, Sparkles } from '@lucide/svelte';
+  import { Send, Plus, Settings, Sparkles, Square, Brain } from '@lucide/svelte';
+  import { tick } from 'svelte';
+  import {
+    store,
+    sendMessage,
+    stopGeneration,
+    newConversation,
+  } from './stores.svelte';
+  import Markdown from './Markdown.svelte';
+
+  let inputText = $state('');
+  let messagesContainer: HTMLDivElement | undefined = $state();
 
   const suggestions = [
     { title: 'Help me study', subtitle: 'vocabulary for a college entrance exam' },
     { title: 'Give me ideas', subtitle: 'for what to do with my kids\u2019 art' },
     { title: 'Overcome procrastination', subtitle: 'give me tips' },
   ];
+
+  async function handleSend() {
+    if (!inputText.trim() || store.isGenerating) return;
+    if (store.serverStatus !== 'ready') return;
+
+    if (!store.activeConversationId) {
+      const conv = await newConversation();
+      if (!conv) return;
+    }
+
+    const text = inputText;
+    inputText = '';
+    await sendMessage(text);
+  }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  }
+
+  async function handleSuggestion(title: string, subtitle: string) {
+    const text = `${title} ${subtitle}`;
+    if (!store.activeConversationId) {
+      const conv = await newConversation();
+      if (!conv) return;
+    }
+    await sendMessage(text);
+  }
+
+  // Auto-scroll on new messages
+  $effect(() => {
+    const _ = store.messages.length;
+    const __ = store.messages.at(-1)?.content;
+    tick().then(() => {
+      if (messagesContainer) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }
+    });
+  });
+
+  const canSend = $derived(
+    inputText.trim().length > 0 && store.serverStatus === 'ready' && !store.isGenerating
+  );
+
+  const inputPlaceholder = $derived(
+    store.serverStatus === 'loading' ? 'Loading model...' :
+    store.serverStatus === 'stopped' ? 'Select a model to start chatting' :
+    'How can I help you today?'
+  );
+
+  const modelDisplayName = $derived(
+    store.activeModel ? store.activeModel.filename.replace('.gguf', '') : 'No model selected'
+  );
+
+  function formatDuration(seconds: number): string {
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  }
+
+  function formatTokenCount(count: number): string {
+    if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
+    return String(count);
+  }
 </script>
 
 <main class="chat-area">
   <header class="chat-header">
-    <div></div>
+    <div class="header-model-name">
+      {#if store.activeConversationId}
+        {modelDisplayName}
+      {/if}
+    </div>
     <div class="header-actions">
       <button class="header-btn">
         <Settings size={18} />
@@ -18,40 +100,156 @@
     </div>
   </header>
 
-  <div class="chat-content">
-    <div class="welcome">
-      <div class="model-icon">P</div>
-      <h1 class="model-name">llama3.2:3b</h1>
+  {#if !store.activeConversationId || store.messages.length === 0}
+    <!-- Welcome / empty state -->
+    <div class="chat-content">
+      <div class="welcome">
+        <div class="model-icon">P</div>
+        <h1 class="welcome-model-name">{modelDisplayName}</h1>
+      </div>
+
+      <div class="input-wrapper">
+        <div class="message-input">
+          <button class="input-action">
+            <Plus size={18} />
+          </button>
+          <textarea
+            rows={1}
+            placeholder={inputPlaceholder}
+            bind:value={inputText}
+            onkeydown={handleKeydown}
+            disabled={store.isGenerating}
+          ></textarea>
+          <button
+            class="thinking-toggle"
+            class:active={store.thinkingEnabled}
+            onclick={() => store.thinkingEnabled = !store.thinkingEnabled}
+            title={store.thinkingEnabled ? 'Thinking enabled' : 'Thinking disabled'}
+          >
+            <Brain size={16} />
+          </button>
+          <button
+            class="send-btn"
+            onclick={handleSend}
+            disabled={!canSend}
+          >
+            <Send size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div class="suggestions">
+        <div class="suggestions-header">
+          <Sparkles size={14} />
+          <span>Suggested</span>
+        </div>
+        {#each suggestions as suggestion}
+          <button
+            class="suggestion-item"
+            onclick={() => handleSuggestion(suggestion.title, suggestion.subtitle)}
+            disabled={store.isGenerating}
+          >
+            <span class="suggestion-title">{suggestion.title}</span>
+            <span class="suggestion-subtitle">{suggestion.subtitle}</span>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {:else}
+    <!-- Active conversation -->
+    <div class="messages-area" bind:this={messagesContainer}>
+      {#each store.messages as msg, i}
+        <div class="message message-{msg.role}">
+          {#if msg.role === 'assistant'}
+            <div class="message-avatar">P</div>
+          {/if}
+          <div class="message-bubble {msg.role}">
+            <div class="message-content">
+              {#if msg.role === 'assistant'}
+                {#if msg.id === '__streaming__' && store.isGenerating && (store.isThinking || !msg.content)}
+                  <span class="thinking"><span class="thinking-dots"></span> Thinking...</span>
+                  {#if msg.content}
+                    <Markdown content={msg.content} />
+                  {/if}
+                {:else}
+                  <Markdown content={msg.content} />{#if msg.id === '__streaming__' && store.isGenerating}<span class="cursor">▊</span>{/if}
+                {/if}
+              {:else}
+                {msg.content}
+              {/if}
+            </div>
+            {#if msg.role === 'assistant' && msg.id !== '__streaming__' && !store.isGenerating && store.lastStats && i === store.messages.length - 1}
+              <div class="generation-stats">
+                {formatDuration(store.lastStats.total_seconds)}
+                · ↑ {formatTokenCount(store.lastStats.token_count)} tokens
+                · {store.lastStats.tokens_per_second.toFixed(1)} t/s
+                {#if store.lastStats.thinking_seconds > 0}
+                  · thought for {formatDuration(store.lastStats.thinking_seconds)}
+                {/if}
+              </div>
+            {/if}
+          </div>
+        </div>
+      {/each}
+      {#if store.generationError}
+        <div class="message message-assistant">
+          <div class="message-avatar">P</div>
+          <div class="message-bubble assistant error-bubble">
+            <div class="message-content error-content">
+              {store.generationError}
+            </div>
+          </div>
+        </div>
+      {/if}
+      {#if store.isGenerating && !store.messages.some(m => m.id === '__streaming__')}
+        <div class="message message-assistant">
+          <div class="message-avatar">P</div>
+          <div class="message-bubble assistant">
+            <div class="message-content">
+              <span class="thinking"><span class="thinking-dots"></span> {store.isThinking ? 'Thinking...' : 'Waiting...'}</span>
+            </div>
+          </div>
+        </div>
+      {/if}
     </div>
 
-    <div class="input-wrapper">
+    <div class="chat-input-bar">
       <div class="message-input">
         <button class="input-action">
           <Plus size={18} />
         </button>
         <textarea
           rows={1}
-          placeholder="How can I help you today?"
+          placeholder={store.serverStatus === 'ready' ? 'Type a message...' : inputPlaceholder}
+          bind:value={inputText}
+          onkeydown={handleKeydown}
+          disabled={store.isGenerating}
         ></textarea>
-        <button class="send-btn">
-          <Send size={18} />
+        <button
+          class="thinking-toggle"
+          class:active={store.thinkingEnabled}
+          onclick={() => store.thinkingEnabled = !store.thinkingEnabled}
+          title={store.thinkingEnabled ? 'Thinking enabled' : 'Thinking disabled'}
+          disabled={store.isGenerating}
+        >
+          <Brain size={16} />
         </button>
+        {#if store.isGenerating}
+          <button class="stop-btn" onclick={stopGeneration}>
+            <Square size={16} />
+          </button>
+        {:else}
+          <button
+            class="send-btn"
+            onclick={handleSend}
+            disabled={!canSend}
+          >
+            <Send size={18} />
+          </button>
+        {/if}
       </div>
     </div>
-
-    <div class="suggestions">
-      <div class="suggestions-header">
-        <Sparkles size={14} />
-        <span>Suggested</span>
-      </div>
-      {#each suggestions as suggestion}
-        <button class="suggestion-item">
-          <span class="suggestion-title">{suggestion.title}</span>
-          <span class="suggestion-subtitle">{suggestion.subtitle}</span>
-        </button>
-      {/each}
-    </div>
-  </div>
+  {/if}
 </main>
 
 <style>
@@ -70,6 +268,11 @@
     padding: 12px 20px;
     border-bottom: 1px solid var(--border);
     min-height: 52px;
+  }
+
+  .header-model-name {
+    font-size: 14px;
+    color: var(--text-muted);
   }
 
   .header-actions {
@@ -123,7 +326,7 @@
     font-weight: 700;
   }
 
-  .model-name {
+  .welcome-model-name {
     font-size: 22px;
     font-weight: 500;
     color: var(--text-bright);
@@ -163,6 +366,10 @@
     color: var(--text-muted);
   }
 
+  .message-input textarea:disabled {
+    opacity: 0.5;
+  }
+
   .input-action {
     padding: 4px;
     border-radius: 6px;
@@ -175,6 +382,31 @@
     color: var(--text-bright);
   }
 
+  .thinking-toggle {
+    padding: 4px;
+    border-radius: 6px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .thinking-toggle.active {
+    color: var(--primary);
+    background: rgba(139, 92, 246, 0.15);
+  }
+
+  .thinking-toggle:hover:not(:disabled) {
+    color: var(--text-bright);
+    background: var(--bg-hover);
+  }
+
+  .thinking-toggle:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+  }
+
   .send-btn {
     padding: 6px;
     border-radius: 8px;
@@ -185,8 +417,27 @@
     transition: background 0.15s;
   }
 
-  .send-btn:hover {
+  .send-btn:hover:not(:disabled) {
     background: var(--primary-light);
+  }
+
+  .send-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .stop-btn {
+    padding: 6px;
+    border-radius: 8px;
+    background: #dc2626;
+    color: var(--text-bright);
+    display: flex;
+    align-items: center;
+    transition: background 0.15s;
+  }
+
+  .stop-btn:hover {
+    background: #ef4444;
   }
 
   .suggestions {
@@ -214,8 +465,13 @@
     transition: background 0.1s;
   }
 
-  .suggestion-item:hover {
+  .suggestion-item:hover:not(:disabled) {
     background: var(--bg-hover);
+  }
+
+  .suggestion-item:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   .suggestion-title {
@@ -227,5 +483,139 @@
   .suggestion-subtitle {
     font-size: 13px;
     color: var(--text-muted);
+  }
+
+  .messages-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .message {
+    display: flex;
+    gap: 12px;
+    max-width: 80%;
+    min-width: 0;
+  }
+
+  .message-user {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+  }
+
+  .message-assistant {
+    align-self: flex-start;
+  }
+
+  .message-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: var(--text-bright);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .message-bubble {
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    line-height: 1.6;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .message-bubble.user {
+    background: var(--primary);
+    color: var(--text-bright);
+    border-bottom-right-radius: 4px;
+  }
+
+  .message-bubble.assistant {
+    background: var(--bg-input);
+    color: var(--text-bright);
+    border-bottom-left-radius: 4px;
+  }
+
+  .message-content {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .message-bubble.user .message-content {
+    white-space: pre-wrap;
+  }
+
+  .cursor {
+    animation: blink 0.7s infinite;
+    color: var(--text-muted);
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .thinking {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-style: italic;
+  }
+
+  .thinking-dots {
+    display: inline-flex;
+    gap: 3px;
+  }
+
+  .thinking-dots::before,
+  .thinking-dots::after,
+  .thinking-dots {
+    content: '';
+  }
+
+  .thinking-dots::before {
+    content: '•••';
+    animation: pulse 1.4s ease-in-out infinite;
+    letter-spacing: 2px;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+  }
+
+  .error-bubble {
+    border: 1px solid #dc2626;
+    background: rgba(220, 38, 38, 0.1);
+  }
+
+  .error-content {
+    color: #f87171;
+    font-size: 13px;
+  }
+
+  .generation-stats {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    opacity: 0.7;
+  }
+
+  .chat-input-bar {
+    padding: 12px 20px 20px;
+    max-width: 800px;
+    margin: 0 auto;
+    width: 100%;
   }
 </style>
