@@ -1,0 +1,12 @@
+[
+  {
+    "filename": "llama-3.2-1b-q4.gguf",
+    "path": "/home/user/models/llama-3.2-1b-q4.gguf",
+    "size_bytes": 1200000000
+  },
+  {
+    "filename": "mistral-7b-q5.gguf",
+    "path": "/home/user/models/mistral-7b-q5.gguf",
+    "size_bytes": 5400000000
+  }
+]

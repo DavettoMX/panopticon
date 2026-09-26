@@ -1,23 +1,15 @@
 <script lang="ts">
-  import { SquarePen, ChevronDown, MessageSquare, PanelLeftClose, PanelLeft, Circle, Trash2, RotateCcw, X } from '@lucide/svelte';
+  import { SquarePen, MessageSquare, PanelLeftClose, PanelLeft, Trash2, RotateCcw, X } from '@lucide/svelte';
   import {
     store,
-    selectModel,
     newConversation,
     loadMessages,
     deleteConversation,
     restoreConversation,
     permanentDeleteConversation,
-    type ModelInfo,
   } from './stores.svelte';
 
   let collapsed = $state(false);
-  let showModelDropdown = $state(false);
-
-  function handleModelSelect(model: ModelInfo) {
-    selectModel(model);
-    showModelDropdown = false;
-  }
 
   function handleChatClick(id: string) {
     loadMessages(id);
@@ -35,14 +27,9 @@
     return Math.max(0, Math.ceil((purgeDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
   }
 
-  const statusColor = $derived(
-    store.serverStatus === 'ready' ? '#4ade80' :
-    store.serverStatus === 'loading' ? '#facc15' :
-    '#6b7280'
-  );
 </script>
 
-<aside class="sidebar" class:collapsed>
+<aside class="sidebar" class:collapsed data-cy="sidebar">
   <div class="sidebar-header">
     {#if !collapsed}
       <span class="logo">Panopticon</span>
@@ -57,77 +44,43 @@
   </div>
 
   {#if !collapsed}
-    <button class="new-chat-btn" onclick={handleNewChat}>
+    <button class="new-chat-btn" onclick={handleNewChat} data-cy="new-chat-btn">
       <SquarePen size={18} />
       <span>New Chat</span>
     </button>
 
-    <div class="model-selector">
-      <button class="model-btn" onclick={() => showModelDropdown = !showModelDropdown}>
-        <span class="model-status">
-          <Circle size={8} fill={statusColor} color={statusColor} />
-        </span>
-        <span class="model-name">
-          {store.activeModel ? store.activeModel.filename.replace('.gguf', '') : 'Select model'}
-        </span>
-        <ChevronDown size={14} />
-      </button>
-
-      {#if showModelDropdown}
-        <div class="model-dropdown">
-          {#each store.models as model}
-            <button
-              class="model-option"
-              class:active={store.activeModel?.path === model.path}
-              onclick={() => handleModelSelect(model)}
-            >
-              <span>{model.filename.replace('.gguf', '')}</span>
-              <span class="model-size">{(model.size_bytes / 1e9).toFixed(1)} GB</span>
-            </button>
-          {/each}
-          {#if store.models.length === 0}
-            <div class="model-option disabled">No models found</div>
-          {/if}
-        </div>
-      {/if}
-    </div>
-
-    {#if store.serverError}
-      <div class="server-error">
-        {store.serverError}
-      </div>
-    {/if}
-
     <div class="chat-list">
       {#if !store.showTrash}
         {#if store.conversations.length > 0}
-          <span class="chat-section-label">Conversations</span>
+          <span class="chat-section-label" data-cy="conversations-label">Conversations</span>
         {/if}
         {#each store.conversations as conv}
-          <div class="chat-item-row" class:active={store.activeConversationId === conv.id}>
+          <div class="chat-item-row" class:active={store.activeConversationId === conv.id} data-cy="conversation-item">
             <button
               class="chat-item"
               onclick={() => handleChatClick(conv.id)}
+              data-cy="conversation-link"
             >
               <MessageSquare size={16} />
-              <span class="chat-title">{conv.title}</span>
+              <span class="chat-title" data-cy="conversation-title">{conv.title}</span>
             </button>
             <button
               class="chat-action delete-action"
               onclick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
               title="Move to trash"
+              data-cy="delete-conversation-btn"
             >
               <Trash2 size={14} />
             </button>
           </div>
         {/each}
       {:else}
-        <span class="chat-section-label">Trash</span>
+        <span class="chat-section-label" data-cy="trash-label">Trash</span>
         {#if store.trash.length === 0}
-          <div class="trash-empty">Trash is empty</div>
+          <div class="trash-empty" data-cy="trash-empty">Trash is empty</div>
         {/if}
         {#each store.trash as conv}
-          <div class="chat-item-row trash-item">
+          <div class="chat-item-row trash-item" data-cy="trash-item">
             <div class="chat-item trash">
               <MessageSquare size={16} />
               <div class="trash-info">
@@ -140,6 +93,7 @@
                 class="chat-action restore-action"
                 onclick={() => restoreConversation(conv.id)}
                 title="Restore"
+                data-cy="restore-btn"
               >
                 <RotateCcw size={14} />
               </button>
@@ -147,6 +101,7 @@
                 class="chat-action delete-action"
                 onclick={() => permanentDeleteConversation(conv.id)}
                 title="Delete permanently"
+                data-cy="permanent-delete-btn"
               >
                 <X size={14} />
               </button>
@@ -157,11 +112,11 @@
     </div>
 
     <div class="sidebar-footer">
-      <button class="trash-toggle" onclick={() => store.showTrash = !store.showTrash}>
+      <button class="trash-toggle" onclick={() => store.showTrash = !store.showTrash} data-cy="trash-toggle">
         <Trash2 size={16} />
         <span>{store.showTrash ? 'Back to chats' : 'Trash'}</span>
         {#if !store.showTrash && store.trash.length > 0}
-          <span class="trash-count">{store.trash.length}</span>
+          <span class="trash-count" data-cy="trash-count">{store.trash.length}</span>
         {/if}
       </button>
       <div class="user-info">
@@ -237,91 +192,6 @@
 
   .new-chat-btn:hover {
     background: var(--primary-light);
-  }
-
-  .model-selector {
-    padding: 0 12px;
-    margin-bottom: 12px;
-    position: relative;
-  }
-
-  .model-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 8px 12px;
-    border-radius: 8px;
-    font-size: 13px;
-    color: var(--text);
-    background: var(--bg-input);
-    border: 1px solid var(--border);
-  }
-
-  .model-btn:hover {
-    border-color: var(--primary);
-  }
-
-  .model-status {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-  }
-
-  .model-name {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: left;
-  }
-
-  .model-dropdown {
-    position: absolute;
-    top: 100%;
-    left: 12px;
-    right: 12px;
-    background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    margin-top: 4px;
-    z-index: 100;
-    overflow: hidden;
-  }
-
-  .model-option {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    padding: 8px 12px;
-    font-size: 13px;
-    color: var(--text);
-    text-align: left;
-    transition: background 0.1s;
-  }
-
-  .model-option:hover {
-    background: var(--bg-hover);
-    color: var(--text-bright);
-  }
-
-  .model-option.active {
-    color: var(--text-bright);
-    background: var(--primary);
-  }
-
-  .model-option.disabled {
-    color: var(--text-muted);
-    cursor: default;
-    padding: 12px;
-    text-align: center;
-    justify-content: center;
-  }
-
-  .model-size {
-    font-size: 11px;
-    color: var(--text-muted);
   }
 
   .chat-list {
@@ -498,13 +368,4 @@
     color: var(--text-bright);
   }
 
-  .server-error {
-    padding: 6px 12px;
-    margin: 0 12px 8px;
-    font-size: 11px;
-    color: #f87171;
-    background: rgba(248, 113, 113, 0.1);
-    border-radius: 6px;
-    word-break: break-word;
-  }
 </style>

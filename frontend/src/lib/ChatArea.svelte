@@ -1,16 +1,36 @@
 <script lang="ts">
-  import { Send, Plus, Settings, Sparkles, Square, Brain } from '@lucide/svelte';
+  import { Send, Plus, Settings, Sparkles, Square, Brain, ChevronDown, Circle, Check } from '@lucide/svelte';
   import { tick } from 'svelte';
   import {
     store,
     sendMessage,
     stopGeneration,
     newConversation,
+    selectModel,
+    type ModelInfo,
   } from './stores.svelte';
   import Markdown from './Markdown.svelte';
 
   let inputText = $state('');
   let messagesContainer: HTMLDivElement | undefined = $state();
+  let showModelDropdown = $state(false);
+
+  function autoResize(e: Event) {
+    const textarea = e.target as HTMLTextAreaElement;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }
+
+  function handleModelSelect(model: ModelInfo) {
+    selectModel(model);
+    showModelDropdown = false;
+  }
+
+  const statusColor = $derived(
+    store.serverStatus === 'ready' ? '#4ade80' :
+    store.serverStatus === 'loading' ? '#facc15' :
+    '#6b7280'
+  );
 
   const suggestions = [
     { title: 'Help me study', subtitle: 'vocabulary for a college entrance exam' },
@@ -29,6 +49,10 @@
 
     const text = inputText;
     inputText = '';
+    // Reset textarea height after clearing
+    document.querySelectorAll<HTMLTextAreaElement>('.message-input textarea').forEach(el => {
+      el.style.height = 'auto';
+    });
     await sendMessage(text);
   }
 
@@ -86,7 +110,7 @@
   }
 </script>
 
-<main class="chat-area">
+<main class="chat-area" data-cy="chat-area">
   <header class="chat-header">
     <div class="header-model-name">
       {#if store.activeConversationId}
@@ -103,7 +127,7 @@
   {#if !store.activeConversationId || store.messages.length === 0}
     <!-- Welcome / empty state -->
     <div class="chat-content">
-      <div class="welcome">
+      <div class="welcome" data-cy="welcome-screen">
         <div class="model-icon">P</div>
         <h1 class="welcome-model-name">{modelDisplayName}</h1>
       </div>
@@ -118,13 +142,16 @@
             placeholder={inputPlaceholder}
             bind:value={inputText}
             onkeydown={handleKeydown}
+            oninput={autoResize}
             disabled={store.isGenerating}
+            data-cy="message-input"
           ></textarea>
           <button
             class="thinking-toggle"
             class:active={store.thinkingEnabled}
             onclick={() => store.thinkingEnabled = !store.thinkingEnabled}
             title={store.thinkingEnabled ? 'Thinking enabled' : 'Thinking disabled'}
+            data-cy="thinking-toggle"
           >
             <Brain size={16} />
           </button>
@@ -132,9 +159,50 @@
             class="send-btn"
             onclick={handleSend}
             disabled={!canSend}
+            data-cy="send-btn"
           >
             <Send size={18} />
           </button>
+        </div>
+        <div class="input-footer">
+          <div class="model-selector">
+            <button class="model-pill" onclick={() => showModelDropdown = !showModelDropdown} data-cy="model-pill">
+              <Circle size={6} fill={statusColor} color={statusColor} />
+              <span class="model-pill-name">
+                {store.activeModel ? store.activeModel.filename.replace('.gguf', '') : 'Select model'}
+              </span>
+              <ChevronDown size={12} />
+            </button>
+            {#if showModelDropdown}
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div class="model-backdrop" onclick={() => showModelDropdown = false}></div>
+              <div class="model-dropdown" data-cy="model-dropdown">
+                {#each store.models as model}
+                  <button
+                    class="model-option"
+                    class:active={store.activeModel?.path === model.path}
+                    onclick={() => handleModelSelect(model)}
+                    data-cy="model-option"
+                  >
+                    <div class="model-option-info">
+                      <span class="model-option-name">{model.filename.replace('.gguf', '')}</span>
+                      <span class="model-option-size">{(model.size_bytes / 1e9).toFixed(1)} GB</span>
+                    </div>
+                    {#if store.activeModel?.path === model.path}
+                      <Check size={14} />
+                    {/if}
+                  </button>
+                {/each}
+                {#if store.models.length === 0}
+                  <div class="model-option disabled" data-cy="model-empty">No models found</div>
+                {/if}
+              </div>
+            {/if}
+          </div>
+          {#if store.serverError}
+            <div class="server-error" data-cy="server-error">{store.serverError}</div>
+          {/if}
         </div>
       </div>
 
@@ -148,6 +216,7 @@
             class="suggestion-item"
             onclick={() => handleSuggestion(suggestion.title, suggestion.subtitle)}
             disabled={store.isGenerating}
+            data-cy="suggestion-item"
           >
             <span class="suggestion-title">{suggestion.title}</span>
             <span class="suggestion-subtitle">{suggestion.subtitle}</span>
@@ -157,17 +226,17 @@
     </div>
   {:else}
     <!-- Active conversation -->
-    <div class="messages-area" bind:this={messagesContainer}>
+    <div class="messages-area" bind:this={messagesContainer} data-cy="messages-area">
       {#each store.messages as msg, i}
         <div class="message message-{msg.role}">
           {#if msg.role === 'assistant'}
             <div class="message-avatar">P</div>
           {/if}
-          <div class="message-bubble {msg.role}">
+          <div class="message-bubble {msg.role}" data-cy="message-{msg.role}">
             <div class="message-content">
               {#if msg.role === 'assistant'}
                 {#if msg.id === '__streaming__' && store.isGenerating && (store.isThinking || !msg.content)}
-                  <span class="thinking"><span class="thinking-dots"></span> Thinking...</span>
+                  <span class="thinking" data-cy="thinking-indicator"><span class="thinking-dots"></span> Thinking...</span>
                   {#if msg.content}
                     <Markdown content={msg.content} />
                   {/if}
@@ -179,7 +248,7 @@
               {/if}
             </div>
             {#if msg.role === 'assistant' && msg.id !== '__streaming__' && !store.isGenerating && store.lastStats && i === store.messages.length - 1}
-              <div class="generation-stats">
+              <div class="generation-stats" data-cy="generation-stats">
                 {formatDuration(store.lastStats.total_seconds)}
                 · ↑ {formatTokenCount(store.lastStats.token_count)} tokens
                 · {store.lastStats.tokens_per_second.toFixed(1)} t/s
@@ -194,7 +263,7 @@
       {#if store.generationError}
         <div class="message message-assistant">
           <div class="message-avatar">P</div>
-          <div class="message-bubble assistant error-bubble">
+          <div class="message-bubble assistant error-bubble" data-cy="generation-error">
             <div class="message-content error-content">
               {store.generationError}
             </div>
@@ -206,7 +275,7 @@
           <div class="message-avatar">P</div>
           <div class="message-bubble assistant">
             <div class="message-content">
-              <span class="thinking"><span class="thinking-dots"></span> {store.isThinking ? 'Thinking...' : 'Waiting...'}</span>
+              <span class="thinking" data-cy="thinking-indicator"><span class="thinking-dots"></span> {store.isThinking ? 'Thinking...' : 'Waiting...'}</span>
             </div>
           </div>
         </div>
@@ -223,7 +292,9 @@
           placeholder={store.serverStatus === 'ready' ? 'Type a message...' : inputPlaceholder}
           bind:value={inputText}
           onkeydown={handleKeydown}
+          oninput={autoResize}
           disabled={store.isGenerating}
+          data-cy="message-input"
         ></textarea>
         <button
           class="thinking-toggle"
@@ -231,11 +302,12 @@
           onclick={() => store.thinkingEnabled = !store.thinkingEnabled}
           title={store.thinkingEnabled ? 'Thinking enabled' : 'Thinking disabled'}
           disabled={store.isGenerating}
+          data-cy="thinking-toggle"
         >
           <Brain size={16} />
         </button>
         {#if store.isGenerating}
-          <button class="stop-btn" onclick={stopGeneration}>
+          <button class="stop-btn" onclick={stopGeneration} data-cy="stop-btn">
             <Square size={16} />
           </button>
         {:else}
@@ -243,9 +315,50 @@
             class="send-btn"
             onclick={handleSend}
             disabled={!canSend}
+            data-cy="send-btn"
           >
             <Send size={18} />
           </button>
+        {/if}
+      </div>
+      <div class="input-footer">
+        <div class="model-selector">
+          <button class="model-pill" onclick={() => showModelDropdown = !showModelDropdown} data-cy="model-pill">
+            <Circle size={6} fill={statusColor} color={statusColor} />
+            <span class="model-pill-name">
+              {store.activeModel ? store.activeModel.filename.replace('.gguf', '') : 'Select model'}
+            </span>
+            <ChevronDown size={12} />
+          </button>
+          {#if showModelDropdown}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="model-backdrop" onclick={() => showModelDropdown = false}></div>
+            <div class="model-dropdown" data-cy="model-dropdown">
+              {#each store.models as model}
+                <button
+                  class="model-option"
+                  class:active={store.activeModel?.path === model.path}
+                  onclick={() => handleModelSelect(model)}
+                  data-cy="model-option"
+                >
+                  <div class="model-option-info">
+                    <span class="model-option-name">{model.filename.replace('.gguf', '')}</span>
+                    <span class="model-option-size">{(model.size_bytes / 1e9).toFixed(1)} GB</span>
+                  </div>
+                  {#if store.activeModel?.path === model.path}
+                    <Check size={14} />
+                  {/if}
+                </button>
+              {/each}
+              {#if store.models.length === 0}
+                <div class="model-option disabled" data-cy="model-empty">No models found</div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+        {#if store.serverError}
+          <div class="server-error" data-cy="server-error">{store.serverError}</div>
         {/if}
       </div>
     </div>
@@ -358,8 +471,10 @@
     line-height: 1.5;
     padding: 4px 0;
     min-height: 24px;
-    max-height: 200px;
+    max-height: 50vh;
+    overflow-y: auto;
     background: transparent;
+    transition: height 0.1s ease;
   }
 
   .message-input textarea::placeholder {
@@ -617,5 +732,110 @@
     max-width: 800px;
     margin: 0 auto;
     width: 100%;
+  }
+
+  .input-footer {
+    display: flex;
+    align-items: center;
+    padding: 6px 4px 0;
+  }
+
+  .model-selector {
+    position: relative;
+  }
+
+  .model-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .model-pill:hover {
+    color: var(--text-bright);
+    background: var(--bg-hover);
+  }
+
+  .model-pill-name {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .model-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+  }
+
+  .model-dropdown {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    min-width: 280px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 6px;
+    z-index: 100;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .model-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--text);
+    text-align: left;
+    transition: background 0.1s;
+  }
+
+  .model-option:hover {
+    background: var(--bg-hover);
+    color: var(--text-bright);
+  }
+
+  .model-option.active {
+    color: var(--text-bright);
+  }
+
+  .model-option.disabled {
+    color: var(--text-muted);
+    cursor: default;
+    padding: 14px;
+    text-align: center;
+    justify-content: center;
+  }
+
+  .model-option-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .model-option-name {
+    font-weight: 500;
+    color: var(--text-bright);
+  }
+
+  .model-option-size {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .server-error {
+    font-size: 11px;
+    color: #f87171;
+    padding: 4px 0 0;
   }
 </style>
