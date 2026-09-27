@@ -10,10 +10,12 @@
     type ModelInfo,
   } from './stores.svelte';
   import Markdown from './Markdown.svelte';
+  import ModelConfigPanel from './ModelConfigPanel.svelte';
 
   let inputText = $state('');
   let messagesContainer: HTMLDivElement | undefined = $state();
   let showModelDropdown = $state(false);
+  let configModel = $state<ModelInfo | null>(null);
 
   function autoResize(e: Event) {
     const textarea = e.target as HTMLTextAreaElement;
@@ -22,8 +24,8 @@
   }
 
   function handleModelSelect(model: ModelInfo) {
-    selectModel(model);
     showModelDropdown = false;
+    configModel = model;
   }
 
   const statusColor = $derived(
@@ -364,6 +366,13 @@
     </div>
   {/if}
 </main>
+
+{#if configModel}
+  <ModelConfigPanel
+    model={configModel}
+    onclose={() => configModel = null}
+  />
+{/if}
 
 <style>
   .chat-area {

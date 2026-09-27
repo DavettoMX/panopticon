@@ -1,5 +1,7 @@
 mod commands;
 mod db;
+mod gguf;
+mod gpu;
 mod llama;
 
 use std::sync::Mutex;
@@ -41,6 +43,9 @@ pub fn run() {
       commands::settings::get_setting,
       commands::settings::set_setting,
       commands::models::list_models,
+      commands::models::get_model_details,
+      commands::models::get_gpu_info,
+      commands::models::get_system_ram_mb,
       commands::server::start_model,
       commands::server::stop_model,
       commands::server::get_server_status,

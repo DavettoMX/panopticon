@@ -15,6 +15,7 @@ pub async fn start_model(
     db: State<'_, DbState>,
     llama: State<'_, LlamaState>,
     model_path: String,
+    ngl: Option<i32>,
 ) -> Result<(), String> {
     let (server_path, context_size) = {
         let conn = db.0.lock().unwrap();
@@ -32,7 +33,7 @@ pub async fn start_model(
     };
 
     let port = *llama.port.lock().unwrap();
-    llama::start_server(&llama, &server_path, &model_path, port, context_size).await
+    llama::start_server(&llama, &server_path, &model_path, port, context_size, ngl).await
 }
 
 #[tauri::command]

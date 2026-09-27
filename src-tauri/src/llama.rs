@@ -27,6 +27,7 @@ pub async fn start_server(
     model_path: &str,
     port: u16,
     context_size: u32,
+    ngl: Option<i32>,
 ) -> Result<(), String> {
     // Stop any running server first
     stop_server(state).await?;
@@ -49,7 +50,10 @@ pub async fn start_server(
         .arg("--host")
         .arg("127.0.0.1")
         .arg("-ngl")
-        .arg("auto")
+        .arg(match ngl {
+            Some(n) => n.to_string(),
+            None => "auto".to_string(),
+        })
         .arg("-c")
         .arg(context_size.to_string())
         .stdout(std::process::Stdio::from(log_file))
