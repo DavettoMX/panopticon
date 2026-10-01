@@ -19,7 +19,7 @@ describe('Chat Flow', () => {
 
   it('selects a model and shows ready state', () => {
     cy.selectModel('llama-3.2-1b-q4');
-    cy.get('[data-cy=model-pill]').first().should('contain', 'llama-3.2-1b-q4');
+    cy.get('[data-cy=model-pill]').first().should('contain', 'Llama 3.2');
     cy.get('[data-cy=message-input]').should(
       'have.attr',
       'placeholder',

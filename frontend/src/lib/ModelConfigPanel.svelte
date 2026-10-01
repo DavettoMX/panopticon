@@ -3,7 +3,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
   import type { ModelInfo } from './stores.svelte';
-  import { store, selectModel } from './stores.svelte';
+  import { store, selectModel, setModelTags, ALL_MODEL_TAGS, getModelSizeClass, formatModelDisplayName } from './stores.svelte';
 
   interface GgufMetadata {
     architecture: string;
@@ -43,6 +43,28 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let starting = $state(false);
+  let selectedTags = $state<string[]>([...(store.modelTags[model?.path] ?? [])]);
+
+  const sizeClass = $derived(getModelSizeClass(model));
+
+  function toggleTag(tag: string) {
+    if (selectedTags.includes(tag)) {
+      selectedTags = selectedTags.filter(t => t !== tag);
+    } else {
+      selectedTags = [...selectedTags, tag];
+    }
+    setModelTags(model.path, selectedTags);
+  }
+
+  const TAG_COLORS: Record<string, string> = {
+    coding: '#22d3ee',
+    chat: '#4ade80',
+    vision: '#f472b6',
+    reasoning: '#a78bfa',
+    creative: '#fb923c',
+    translation: '#38bdf8',
+    summarization: '#facc15',
+  };
 
   onMount(async () => {
     try {
@@ -243,7 +265,10 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="panel" onclick={(e) => e.stopPropagation()}>
     <header class="panel-header">
-      <h2>{model.filename.replace('.gguf', '')}</h2>
+      <div class="panel-title">
+        <h2>{formatModelDisplayName(model.filename)}</h2>
+        <span class="size-class-badge {sizeClass.toLowerCase()}">{sizeClass}</span>
+      </div>
       <button class="close-btn" onclick={onclose}>
         <X size={18} />
       </button>
@@ -283,6 +308,24 @@
           <div class="info-chip">
             <span class="chip-label">Size</span>
             <span class="chip-value">{(model.size_bytes / 1e9).toFixed(1)} GB</span>
+          </div>
+        </div>
+
+        <!-- Task tags -->
+        <div class="tags-section">
+          <div class="tags-header">Task Categories</div>
+          <div class="tags-grid">
+            {#each ALL_MODEL_TAGS as { value, label }}
+              {@const color = TAG_COLORS[value] ?? '#6b7280'}
+              <button
+                class="tag-toggle"
+                class:active={selectedTags.includes(value)}
+                style={selectedTags.includes(value) ? `color: ${color}; background: ${color}20; border-color: ${color}40` : ''}
+                onclick={() => toggleTag(value)}
+              >
+                {label}
+              </button>
+            {/each}
           </div>
         </div>
 
@@ -413,6 +456,7 @@
           class:disabled-btn={vramOverflow}
           onclick={handleStart}
           disabled={starting || vramOverflow}
+          data-cy="load-model-btn"
         >
           {#if starting}
             Loading...
@@ -470,11 +514,35 @@
     border-bottom: 1px solid var(--border);
   }
 
+  .panel-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
   .panel-header h2 {
     font-size: 17px;
     font-weight: 600;
     color: var(--text-bright);
     margin: 0;
+  }
+
+  .size-class-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+  }
+
+  .size-class-badge.slm {
+    background: rgba(34, 211, 238, 0.15);
+    color: #22d3ee;
+  }
+
+  .size-class-badge.llm {
+    background: rgba(168, 85, 247, 0.15);
+    color: #a855f7;
   }
 
   .close-btn {
@@ -554,6 +622,44 @@
     font-size: 14px;
     font-weight: 600;
     color: var(--text-bright);
+  }
+
+  /* Task tags */
+  .tags-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .tags-header {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .tags-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .tag-toggle {
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 12px;
+    border-radius: 6px;
+    background: var(--bg-input);
+    color: var(--text-muted);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .tag-toggle:hover {
+    color: var(--text-bright);
+    border-color: var(--border);
   }
 
   /* Offload slider */

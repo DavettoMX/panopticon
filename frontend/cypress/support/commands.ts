@@ -73,6 +73,30 @@ Cypress.Commands.add('setupApp', function () {
               get_messages: [],
               start_model: null,
               stop_generation: null,
+              get_all_model_tags: {},
+              get_model_details: {
+                architecture: 'llama',
+                quantization: 'Q4_K_M',
+                parameter_count: 1000000000,
+                layer_count: 22,
+                embedding_length: 2048,
+                context_length: 8192,
+                head_count: 32,
+                head_count_kv: 8,
+                vocab_size: 32000,
+                file_type: 14,
+                tensor_count: 200,
+              },
+              get_gpu_info: {
+                name: 'Mock GPU',
+                vram_total_mb: 16384,
+                vram_used_mb: 1024,
+                vram_free_mb: 15360,
+                compute_capability: '8.6',
+                pcie_bandwidth_gbps: 32,
+              },
+              get_system_ram_mb: 32768,
+              set_model_tags: null,
               create_conversation: null,
               delete_conversation: null,
               restore_conversation: null,
@@ -92,7 +116,9 @@ Cypress.Commands.add('setupApp', function () {
 Cypress.Commands.add('selectModel', (modelName: string) => {
   cy.get('[data-cy=model-pill]').first().click();
   cy.get('[data-cy=model-dropdown]').should('be.visible');
-  cy.get('[data-cy=model-option]').contains(modelName).click();
+  cy.get(`[data-cy=model-option][data-cy-model*="${modelName}"]`).click();
+  // Config panel opens — wait for metadata to load, then click "Load Model"
+  cy.get('[data-cy=load-model-btn]').should('exist').click({ force: true });
 });
 
 Cypress.Commands.add('sendChatMessage', (text: string) => {

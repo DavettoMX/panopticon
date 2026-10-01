@@ -5,6 +5,7 @@
   import {
     loadConversations,
     loadModels,
+    loadModelTags,
     loadTrash,
     setupEventListeners,
   } from './lib/stores.svelte';
@@ -12,6 +13,7 @@
   onMount(() => {
     loadConversations();
     loadModels();
+    loadModelTags();
     loadTrash();
     setupEventListeners();
   });

@@ -46,6 +46,8 @@ pub fn run() {
       commands::models::get_model_details,
       commands::models::get_gpu_info,
       commands::models::get_system_ram_mb,
+      commands::models::get_all_model_tags,
+      commands::models::set_model_tags,
       commands::server::start_model,
       commands::server::stop_model,
       commands::server::get_server_status,

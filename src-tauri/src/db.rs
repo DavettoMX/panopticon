@@ -85,6 +85,12 @@ fn create_tables(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id);
         CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
         CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
+        CREATE TABLE IF NOT EXISTS model_tags (
+            model_path TEXT NOT NULL,
+            tag TEXT NOT NULL,
+            PRIMARY KEY (model_path, tag)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id);
         CREATE INDEX IF NOT EXISTS idx_chunks_document ON document_chunks(document_id);
         "
@@ -345,6 +351,31 @@ pub fn get_messages(conn: &Connection, conversation_id: &str) -> Result<Vec<Mess
         })
     })?;
     rows.collect()
+}
+
+// --- Model Tags ---
+
+pub fn get_all_model_tags(conn: &Connection) -> Result<std::collections::HashMap<String, Vec<String>>> {
+    let mut stmt = conn.prepare("SELECT model_path, tag FROM model_tags ORDER BY model_path, tag")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+
+    let mut map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    for row in rows {
+        let (path, tag) = row?;
+        map.entry(path).or_default().push(tag);
+    }
+    Ok(map)
+}
+
+pub fn set_model_tags(conn: &Connection, model_path: &str, tags: &[String]) -> Result<()> {
+    conn.execute("DELETE FROM model_tags WHERE model_path = ?1", params![model_path])?;
+    let mut stmt = conn.prepare("INSERT INTO model_tags (model_path, tag) VALUES (?1, ?2)")?;
+    for tag in tags {
+        stmt.execute(params![model_path, tag])?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

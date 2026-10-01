@@ -25,6 +25,63 @@ export interface ModelInfo {
   filename: string;
   path: string;
   size_bytes: number;
+  parameter_count: number;
+}
+
+export type ModelTag = 'coding' | 'chat' | 'vision' | 'reasoning' | 'creative' | 'translation' | 'summarization';
+
+export const ALL_MODEL_TAGS: { value: ModelTag; label: string }[] = [
+  { value: 'coding', label: 'Coding' },
+  { value: 'chat', label: 'Chat' },
+  { value: 'vision', label: 'Vision' },
+  { value: 'reasoning', label: 'Reasoning' },
+  { value: 'creative', label: 'Creative' },
+  { value: 'translation', label: 'Translation' },
+  { value: 'summarization', label: 'Summarization' },
+];
+
+export function formatModelDisplayName(filename: string): string {
+  let name = filename.replace(/\.gguf$/i, '');
+
+  // Remove quantization suffix (Q4_K_M, Q5_K_S, Q8_0, IQ4_XS, F16, BF16, etc.)
+  name = name.replace(/[-._](I?Q\d+(?:_\w+)*|B?F\d+)$/i, '');
+
+  // Extract parameter size (e.g., 4B, 27B, E4B, 0.5B)
+  const sizeMatch = name.match(/[-._]([Ee]?\d+(?:\.\d+)?)[Bb]/);
+  let size = '';
+  if (sizeMatch) {
+    size = sizeMatch[1].toUpperCase() + 'B';
+    name = name.replace(/[-._][Ee]?\d+(?:\.\d+)?[Bb]/, '');
+  }
+
+  // Remove vendor prefixes (e.g., google_)
+  name = name.replace(/^google[-_]/i, '');
+
+  // Replace separators with spaces
+  name = name.replace(/[-_]+/g, ' ').trim();
+
+  // Deduplicate prefix: "Qwen Qwen3.5" → "Qwen3.5"
+  const parts = name.split(' ');
+  if (parts.length >= 2) {
+    const first = parts[0].toLowerCase();
+    if (parts[1].toLowerCase().startsWith(first)) {
+      parts.splice(0, 1);
+    }
+  }
+  name = parts.join(' ');
+
+  // Add space between letters and digits: "Qwen3.5" → "Qwen 3.5"
+  name = name.replace(/([a-zA-Z])(\d)/g, '$1 $2');
+
+  // Capitalize each word
+  name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+  return size ? `${name}:${size}` : name;
+}
+
+export function formatQuantShort(filename: string): string {
+  const match = filename.match(/(I?Q\d+|B?F\d+)(?:_\w+)*\.gguf$/i);
+  return match ? match[1].toUpperCase() : '';
 }
 
 interface TokenPayload {
@@ -64,6 +121,7 @@ export const store = $state({
   thinkingEnabled: true,
   trash: [] as Conversation[],
   showTrash: false,
+  modelTags: {} as Record<string, string[]>,
 });
 
 // --- Backend calls ---
@@ -91,6 +149,27 @@ export async function loadModels() {
   } catch (e) {
     console.error('Failed to load models:', e);
   }
+}
+
+export async function loadModelTags() {
+  try {
+    store.modelTags = await invoke<Record<string, string[]>>('get_all_model_tags') ?? {};
+  } catch (e) {
+    console.error('Failed to load model tags:', e);
+  }
+}
+
+export async function setModelTags(modelPath: string, tags: string[]) {
+  try {
+    await invoke('set_model_tags', { modelPath, tags });
+    store.modelTags = { ...store.modelTags, [modelPath]: tags };
+  } catch (e) {
+    console.error('Failed to set model tags:', e);
+  }
+}
+
+export function getModelSizeClass(model: ModelInfo): 'SLM' | 'LLM' {
+  return model.parameter_count > 0 && model.parameter_count < 10_000_000_000 ? 'SLM' : 'LLM';
 }
 
 export async function selectModel(model: ModelInfo) {

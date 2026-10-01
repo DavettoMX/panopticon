@@ -7,6 +7,9 @@
     stopGeneration,
     newConversation,
     selectModel,
+    getModelSizeClass,
+    formatModelDisplayName,
+    formatQuantShort,
     type ModelInfo,
   } from './stores.svelte';
   import Markdown from './Markdown.svelte';
@@ -96,8 +99,29 @@
   );
 
   const modelDisplayName = $derived(
-    store.activeModel ? store.activeModel.filename.replace('.gguf', '') : 'No model selected'
+    store.activeModel ? formatModelDisplayName(store.activeModel.filename) : 'No model selected'
   );
+
+  const slmModels = $derived(store.models.filter(m => getModelSizeClass(m) === 'SLM'));
+  const llmModels = $derived(store.models.filter(m => getModelSizeClass(m) === 'LLM'));
+
+  function formatParams(n: number): string {
+    if (n >= 1e12) return `${(n / 1e12).toFixed(1)}T`;
+    if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+    if (n >= 1e6) return `${(n / 1e6).toFixed(0)}M`;
+    if (n === 0) return '?';
+    return String(n);
+  }
+
+  const TAG_COLORS: Record<string, string> = {
+    coding: '#22d3ee',
+    chat: '#4ade80',
+    vision: '#f472b6',
+    reasoning: '#a78bfa',
+    creative: '#fb923c',
+    translation: '#38bdf8',
+    summarization: '#facc15',
+  };
 
   function formatDuration(seconds: number): string {
     if (seconds < 60) return `${Math.round(seconds)}s`;
@@ -111,6 +135,38 @@
     return String(count);
   }
 </script>
+
+{#snippet modelOption(model: ModelInfo)}
+  <button
+    class="model-option"
+    class:active={store.activeModel?.path === model.path}
+    onclick={() => handleModelSelect(model)}
+    data-cy="model-option"
+    data-cy-model={model.filename.replace('.gguf', '')}
+  >
+    <div class="model-option-info">
+      <div class="model-option-top">
+        <span class="model-option-name">{formatModelDisplayName(model.filename)}</span>
+        {#if store.activeModel?.path === model.path}
+          <Check size={14} />
+        {/if}
+      </div>
+      <div class="model-option-meta">
+        <span class="model-option-size">{(model.size_bytes / 1e9).toFixed(1)} GB</span>
+        {#if formatQuantShort(model.filename)}
+          <span class="model-option-quant">{formatQuantShort(model.filename)}</span>
+        {/if}
+        {#if store.modelTags[model.path]?.length}
+          <span class="model-option-tags">
+            {#each store.modelTags[model.path] as tag}
+              <span class="tag-badge" style="background: {TAG_COLORS[tag] ?? '#6b7280'}20; color: {TAG_COLORS[tag] ?? '#6b7280'}">{tag}</span>
+            {/each}
+          </span>
+        {/if}
+      </div>
+    </div>
+  </button>
+{/snippet}
 
 <main class="chat-area" data-cy="chat-area">
   <header class="chat-header">
@@ -171,7 +227,7 @@
             <button class="model-pill" onclick={() => showModelDropdown = !showModelDropdown} data-cy="model-pill">
               <Circle size={6} fill={statusColor} color={statusColor} />
               <span class="model-pill-name">
-                {store.activeModel ? store.activeModel.filename.replace('.gguf', '') : 'Select model'}
+                {store.activeModel ? formatModelDisplayName(store.activeModel.filename) : 'Select model'}
               </span>
               <ChevronDown size={12} />
             </button>
@@ -180,24 +236,30 @@
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div class="model-backdrop" onclick={() => showModelDropdown = false}></div>
               <div class="model-dropdown" data-cy="model-dropdown">
-                {#each store.models as model}
-                  <button
-                    class="model-option"
-                    class:active={store.activeModel?.path === model.path}
-                    onclick={() => handleModelSelect(model)}
-                    data-cy="model-option"
-                  >
-                    <div class="model-option-info">
-                      <span class="model-option-name">{model.filename.replace('.gguf', '')}</span>
-                      <span class="model-option-size">{(model.size_bytes / 1e9).toFixed(1)} GB</span>
-                    </div>
-                    {#if store.activeModel?.path === model.path}
-                      <Check size={14} />
-                    {/if}
-                  </button>
-                {/each}
                 {#if store.models.length === 0}
                   <div class="model-option disabled" data-cy="model-empty">No models found</div>
+                {:else}
+                  {#if slmModels.length > 0}
+                    <div class="model-group-header">
+                      <span class="group-badge slm">SLM</span>
+                      <span>Small Language Models</span>
+                    </div>
+                    {#each slmModels as model}
+                      {@render modelOption(model)}
+                    {/each}
+                  {/if}
+                  {#if llmModels.length > 0}
+                    {#if slmModels.length > 0}
+                      <div class="model-group-divider"></div>
+                    {/if}
+                    <div class="model-group-header">
+                      <span class="group-badge llm">LLM</span>
+                      <span>Large Language Models</span>
+                    </div>
+                    {#each llmModels as model}
+                      {@render modelOption(model)}
+                    {/each}
+                  {/if}
                 {/if}
               </div>
             {/if}
@@ -328,7 +390,7 @@
           <button class="model-pill" onclick={() => showModelDropdown = !showModelDropdown} data-cy="model-pill">
             <Circle size={6} fill={statusColor} color={statusColor} />
             <span class="model-pill-name">
-              {store.activeModel ? store.activeModel.filename.replace('.gguf', '') : 'Select model'}
+              {store.activeModel ? formatModelDisplayName(store.activeModel.filename) : 'Select model'}
             </span>
             <ChevronDown size={12} />
           </button>
@@ -337,24 +399,30 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div class="model-backdrop" onclick={() => showModelDropdown = false}></div>
             <div class="model-dropdown" data-cy="model-dropdown">
-              {#each store.models as model}
-                <button
-                  class="model-option"
-                  class:active={store.activeModel?.path === model.path}
-                  onclick={() => handleModelSelect(model)}
-                  data-cy="model-option"
-                >
-                  <div class="model-option-info">
-                    <span class="model-option-name">{model.filename.replace('.gguf', '')}</span>
-                    <span class="model-option-size">{(model.size_bytes / 1e9).toFixed(1)} GB</span>
-                  </div>
-                  {#if store.activeModel?.path === model.path}
-                    <Check size={14} />
-                  {/if}
-                </button>
-              {/each}
               {#if store.models.length === 0}
                 <div class="model-option disabled" data-cy="model-empty">No models found</div>
+              {:else}
+                {#if slmModels.length > 0}
+                  <div class="model-group-header">
+                    <span class="group-badge slm">SLM</span>
+                    <span>Small Language Models</span>
+                  </div>
+                  {#each slmModels as model}
+                    {@render modelOption(model)}
+                  {/each}
+                {/if}
+                {#if llmModels.length > 0}
+                  {#if slmModels.length > 0}
+                    <div class="model-group-divider"></div>
+                  {/if}
+                  <div class="model-group-header">
+                    <span class="group-badge llm">LLM</span>
+                    <span>Large Language Models</span>
+                  </div>
+                  {#each llmModels as model}
+                    {@render modelOption(model)}
+                  {/each}
+                {/if}
               {/if}
             </div>
           {/if}
@@ -826,20 +894,98 @@
     justify-content: center;
   }
 
+  .model-group-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 500;
+  }
+
+  .group-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+  }
+
+  .group-badge.slm {
+    background: rgba(34, 211, 238, 0.15);
+    color: #22d3ee;
+  }
+
+  .group-badge.llm {
+    background: rgba(168, 85, 247, 0.15);
+    color: #a855f7;
+  }
+
+  .model-group-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 14px;
+  }
+
   .model-option-info {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .model-option-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
 
   .model-option-name {
     font-weight: 500;
     color: var(--text-bright);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .model-option-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
   }
 
   .model-option-size {
     font-size: 11px;
     color: var(--text-muted);
+  }
+
+  .model-option-quant {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.06);
+    padding: 0 5px;
+    border-radius: 3px;
+  }
+
+  .model-option-tags {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .tag-badge {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
   }
 
   .server-error {
