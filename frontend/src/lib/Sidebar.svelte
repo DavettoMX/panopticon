@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SquarePen, MessageSquare, PanelLeftClose, PanelLeft, Trash2, RotateCcw, X } from '@lucide/svelte';
+  import { SquarePen, MessageSquare, PanelLeftClose, PanelLeft, Trash2, RotateCcw, X, Network } from '@lucide/svelte';
   import {
     store,
     newConversation,
@@ -8,6 +8,7 @@
     restoreConversation,
     permanentDeleteConversation,
   } from './stores.svelte';
+  import { orchStore, switchMode, loadSessions, loadSessionLog, deleteSession } from './orchestrator-store.svelte';
 
   let collapsed = $state(false);
 
@@ -44,13 +45,64 @@
   </div>
 
   {#if !collapsed}
+    <!-- Mode Toggle -->
+    <div class="mode-tabs" data-cy="mode-tabs">
+      <button
+        class="mode-tab"
+        class:active={orchStore.mode === 'chat'}
+        onclick={() => switchMode('chat')}
+        data-cy="mode-tab-chat"
+      >
+        <MessageSquare size={14} />
+        <span>Chat</span>
+      </button>
+      <button
+        class="mode-tab"
+        class:active={orchStore.mode === 'orchestrator'}
+        onclick={() => { switchMode('orchestrator'); loadSessions(); }}
+        data-cy="mode-tab-orchestrator"
+      >
+        <Network size={14} />
+        <span>Orchestrator</span>
+      </button>
+    </div>
+
+    {#if orchStore.mode === 'chat'}
     <button class="new-chat-btn" onclick={handleNewChat} data-cy="new-chat-btn">
       <SquarePen size={18} />
       <span>New Chat</span>
     </button>
+    {/if}
 
     <div class="chat-list">
-      {#if !store.showTrash}
+      {#if orchStore.mode === 'orchestrator'}
+        <!-- Orchestrator Sessions -->
+        <span class="chat-section-label" data-cy="sessions-label">Sessions</span>
+        {#if orchStore.sessions.length === 0}
+          <div class="trash-empty">No sessions yet</div>
+        {/if}
+        {#each orchStore.sessions as session}
+          <div class="chat-item-row" data-cy="session-item" class:active={orchStore.sessionId === session.id}>
+            <button
+              class="chat-item"
+              onclick={() => { orchStore.sessionId = session.id; loadSessionLog(session.id); }}
+              data-cy="session-link"
+            >
+              <Network size={16} />
+              <span class="chat-title">{session.task_description.slice(0, 50)}</span>
+            </button>
+            <span class="session-status-badge" class:done={session.status === 'complete'} class:err={session.status === 'error'}>{session.status}</span>
+            <button
+              class="chat-action delete-action"
+              onclick={(e) => { e.stopPropagation(); deleteSession(session.id); }}
+              title="Delete session"
+              data-cy="delete-session-btn"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        {/each}
+      {:else if !store.showTrash}
         {#if store.conversations.length > 0}
           <span class="chat-section-label" data-cy="conversations-label">Conversations</span>
         {/if}
@@ -366,6 +418,57 @@
   .username {
     font-size: 13px;
     color: var(--text-bright);
+  }
+
+  .mode-tabs {
+    display: flex;
+    margin: 0 12px 8px;
+    border-radius: 8px;
+    background: var(--bg-input);
+    padding: 3px;
+    gap: 2px;
+  }
+
+  .mode-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    transition: all 0.15s;
+  }
+
+  .mode-tab:hover {
+    color: var(--text-bright);
+  }
+
+  .mode-tab.active {
+    background: var(--primary);
+    color: var(--text-bright);
+  }
+
+  .session-status-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    margin-right: 8px;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.05);
+    flex-shrink: 0;
+  }
+
+  .session-status-badge.done {
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.1);
+  }
+
+  .session-status-badge.err {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.1);
   }
 
 </style>

@@ -19,6 +19,7 @@ pub struct GgufMetadata {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum GgufValue {
     Uint8(u8),
     Int8(i8),

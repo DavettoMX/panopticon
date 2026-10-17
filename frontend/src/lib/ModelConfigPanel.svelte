@@ -43,7 +43,14 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let starting = $state(false);
-  let selectedTags = $state<string[]>([...(store.modelTags[model?.path] ?? [])]);
+  let selectedTags = $state<string[]>([]);
+
+  $effect(() => {
+    if (model) {
+      // Re-initialize tags when model changes
+      selectedTags = [...(store.modelTags[model.path] ?? [])];
+    }
+  });
 
   const sizeClass = $derived(getModelSizeClass(model));
 

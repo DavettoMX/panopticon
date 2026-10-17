@@ -3,6 +3,7 @@ mod db;
 mod gguf;
 mod gpu;
 mod llama;
+mod orchestrator;
 
 use std::sync::Mutex;
 use tauri::Manager;
@@ -34,6 +35,7 @@ pub fn run() {
 
       app.manage(DbState(Mutex::new(conn)));
       app.manage(llama::LlamaState::new());
+      app.manage(orchestrator::OrchestratorState::new());
 
       log::info!("Database ready at {:?}", db_path);
 
@@ -61,6 +63,21 @@ pub fn run() {
       commands::chat::get_messages,
       commands::chat::send_message,
       commands::chat::stop_generation,
+      commands::orchestrator::create_orchestrator_session,
+      commands::orchestrator::start_orchestrator,
+      commands::orchestrator::stop_orchestrator,
+      commands::orchestrator::pause_orchestrator,
+      commands::orchestrator::resume_orchestrator,
+      commands::orchestrator::inject_user_message,
+      commands::orchestrator::get_orchestrator_status,
+      commands::orchestrator::estimate_team_vram,
+      commands::orchestrator::list_orchestrator_sessions,
+      commands::orchestrator::get_orchestrator_log,
+      commands::orchestrator::delete_orchestrator_session,
+      commands::orchestrator::validate_working_directory,
+      commands::orchestrator::approve_file_writes,
+      commands::orchestrator::deny_file_writes,
+      commands::orchestrator::list_working_directory,
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
@@ -72,6 +89,17 @@ pub fn run() {
         if process.is_some() {
           log::info!("Dropping llama-server process on exit");
           *process = None;
+        }
+
+        // Also drop orchestrator agent processes
+        let orch_state = app.state::<orchestrator::OrchestratorState>();
+        let mut agents = orch_state.agents.lock().unwrap();
+        if !agents.is_empty() {
+          log::info!("Dropping {} orchestrator agent processes on exit", agents.len());
+          for (_, instance) in agents.iter_mut() {
+            instance.process.take(); // kill_on_drop will handle cleanup
+          }
+          agents.clear();
         }
       }
     });

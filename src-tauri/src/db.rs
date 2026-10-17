@@ -93,6 +93,42 @@ fn create_tables(conn: &Connection) -> Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id);
         CREATE INDEX IF NOT EXISTS idx_chunks_document ON document_chunks(document_id);
+
+        CREATE TABLE IF NOT EXISTS orchestrator_sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            task_description TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'created',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            completed_at TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS orchestrator_agents (
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            model_path TEXT NOT NULL,
+            ngl INTEGER,
+            context_size INTEGER NOT NULL DEFAULT 8192,
+            port INTEGER NOT NULL,
+            PRIMARY KEY (session_id, role),
+            FOREIGN KEY (session_id) REFERENCES orchestrator_sessions(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS orchestrator_messages (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            from_role TEXT NOT NULL,
+            to_role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            message_type TEXT NOT NULL,
+            step_number INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (session_id) REFERENCES orchestrator_sessions(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_orch_messages_session ON orchestrator_messages(session_id, step_number);
+        CREATE INDEX IF NOT EXISTS idx_orch_sessions_user ON orchestrator_sessions(user_id);
         "
     )?;
 
@@ -378,6 +414,175 @@ pub fn set_model_tags(conn: &Connection, model_path: &str, tags: &[String]) -> R
     Ok(())
 }
 
+// --- Orchestrator ---
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OrchestratorSession {
+    pub id: String,
+    pub task_description: String,
+    pub status: String,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OrchestratorAgentRow {
+    pub session_id: String,
+    pub role: String,
+    pub model_path: String,
+    pub ngl: Option<i32>,
+    pub context_size: i32,
+    pub port: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OrchestratorMessageRow {
+    pub id: String,
+    pub session_id: String,
+    pub from_role: String,
+    pub to_role: String,
+    pub content: String,
+    pub message_type: String,
+    pub step_number: i32,
+    pub created_at: String,
+}
+
+pub fn create_orchestrator_session(conn: &Connection, user_id: &str, task: &str) -> Result<OrchestratorSession> {
+    let id = uuid::Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO orchestrator_sessions (id, user_id, task_description) VALUES (?1, ?2, ?3)",
+        params![id, user_id, task],
+    )?;
+    conn.query_row(
+        "SELECT id, task_description, status, created_at, completed_at FROM orchestrator_sessions WHERE id = ?1",
+        params![id],
+        |row| Ok(OrchestratorSession {
+            id: row.get(0)?,
+            task_description: row.get(1)?,
+            status: row.get(2)?,
+            created_at: row.get(3)?,
+            completed_at: row.get(4)?,
+        }),
+    )
+}
+
+pub fn update_session_status(conn: &Connection, session_id: &str, status: &str) -> Result<()> {
+    let completed_at = if status == "complete" || status == "error" {
+        "datetime('now')"
+    } else {
+        "NULL"
+    };
+    conn.execute(
+        &format!(
+            "UPDATE orchestrator_sessions SET status = ?1, completed_at = {} WHERE id = ?2",
+            completed_at
+        ),
+        params![status, session_id],
+    )?;
+    Ok(())
+}
+
+pub fn insert_orchestrator_agent(
+    conn: &Connection,
+    session_id: &str,
+    role: &str,
+    model_path: &str,
+    ngl: Option<i32>,
+    context_size: i32,
+    port: i32,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO orchestrator_agents (session_id, role, model_path, ngl, context_size, port) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![session_id, role, model_path, ngl, context_size, port],
+    )?;
+    Ok(())
+}
+
+pub fn insert_orchestrator_message(
+    conn: &Connection,
+    session_id: &str,
+    from_role: &str,
+    to_role: &str,
+    content: &str,
+    message_type: &str,
+    step_number: i32,
+) -> Result<OrchestratorMessageRow> {
+    let id = uuid::Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO orchestrator_messages (id, session_id, from_role, to_role, content, message_type, step_number) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![id, session_id, from_role, to_role, content, message_type, step_number],
+    )?;
+    conn.query_row(
+        "SELECT id, session_id, from_role, to_role, content, message_type, step_number, created_at FROM orchestrator_messages WHERE id = ?1",
+        params![id],
+        |row| Ok(OrchestratorMessageRow {
+            id: row.get(0)?,
+            session_id: row.get(1)?,
+            from_role: row.get(2)?,
+            to_role: row.get(3)?,
+            content: row.get(4)?,
+            message_type: row.get(5)?,
+            step_number: row.get(6)?,
+            created_at: row.get(7)?,
+        }),
+    )
+}
+
+pub fn get_orchestrator_messages(conn: &Connection, session_id: &str) -> Result<Vec<OrchestratorMessageRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, session_id, from_role, to_role, content, message_type, step_number, created_at
+         FROM orchestrator_messages WHERE session_id = ?1 ORDER BY step_number ASC, created_at ASC"
+    )?;
+    let rows = stmt.query_map(params![session_id], |row| {
+        Ok(OrchestratorMessageRow {
+            id: row.get(0)?,
+            session_id: row.get(1)?,
+            from_role: row.get(2)?,
+            to_role: row.get(3)?,
+            content: row.get(4)?,
+            message_type: row.get(5)?,
+            step_number: row.get(6)?,
+            created_at: row.get(7)?,
+        })
+    })?;
+    rows.collect()
+}
+
+pub fn list_orchestrator_sessions(conn: &Connection, user_id: &str) -> Result<Vec<OrchestratorSession>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, task_description, status, created_at, completed_at
+         FROM orchestrator_sessions WHERE user_id = ?1 ORDER BY created_at DESC"
+    )?;
+    let rows = stmt.query_map(params![user_id], |row| {
+        Ok(OrchestratorSession {
+            id: row.get(0)?,
+            task_description: row.get(1)?,
+            status: row.get(2)?,
+            created_at: row.get(3)?,
+            completed_at: row.get(4)?,
+        })
+    })?;
+    rows.collect()
+}
+
+pub fn get_orchestrator_agents(conn: &Connection, session_id: &str) -> Result<Vec<OrchestratorAgentRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT session_id, role, model_path, ngl, context_size, port
+         FROM orchestrator_agents WHERE session_id = ?1"
+    )?;
+    let rows = stmt.query_map(params![session_id], |row| {
+        Ok(OrchestratorAgentRow {
+            session_id: row.get(0)?,
+            role: row.get(1)?,
+            model_path: row.get(2)?,
+            ngl: row.get(3)?,
+            context_size: row.get(4)?,
+            port: row.get(5)?,
+        })
+    })?;
+    rows.collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,3 +611,11 @@ mod tests {
         assert!(tables.contains(&"embeddings".to_string()));
     }
 }
+
+pub fn delete_orchestrator_session(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM orchestrator_messages WHERE session_id = ?1", params![id])?;
+    conn.execute("DELETE FROM orchestrator_agents WHERE session_id = ?1", params![id])?;
+    conn.execute("DELETE FROM orchestrator_sessions WHERE id = ?1", params![id])?;
+    Ok(())
+}
+

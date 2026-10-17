@@ -56,6 +56,7 @@ pub async fn start_server(
         })
         .arg("-c")
         .arg(context_size.to_string())
+        .arg("--jinja")
         .stdout(std::process::Stdio::from(log_file))
         .stderr(std::process::Stdio::from(stderr_file))
         .kill_on_drop(true)
@@ -124,6 +125,72 @@ async fn wait_for_ready(state: &LlamaState, port: u16) -> Result<(), String> {
 
         match client.get(&url).send().await {
             Ok(resp) if resp.status().is_success() => {
+                return Ok(());
+            }
+            _ => {
+                sleep(Duration::from_millis(500)).await;
+            }
+        }
+    }
+}
+
+/// Standalone server launch — returns Child directly without storing in LlamaState.
+/// Used by the orchestrator to spawn multiple concurrent llama-server instances.
+pub async fn start_server_standalone(
+    server_path: &str,
+    model_path: &str,
+    port: u16,
+    context_size: u32,
+    ngl: Option<i32>,
+) -> Result<Child, String> {
+    info!("Starting standalone llama-server on port {} with model: {}", port, model_path);
+
+    let log_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let log_path = format!("{}/.local/share/com.panopticon.app/llama-server-{}.log", log_dir, port);
+    let log_file = std::fs::File::create(&log_path)
+        .map_err(|e| format!("Failed to create log file: {}", e))?;
+    let stderr_file = log_file.try_clone()
+        .map_err(|e| format!("Failed to clone log file: {}", e))?;
+
+    let child = Command::new(server_path)
+        .arg("-m")
+        .arg(model_path)
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--host")
+        .arg("127.0.0.1")
+        .arg("-ngl")
+        .arg(match ngl {
+            Some(n) => n.to_string(),
+            None => "auto".to_string(),
+        })
+        .arg("-c")
+        .arg(context_size.to_string())
+        .arg("--jinja")
+        .stdout(std::process::Stdio::from(log_file))
+        .stderr(std::process::Stdio::from(stderr_file))
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("Failed to start llama-server on port {}: {}", port, e))?;
+
+    Ok(child)
+}
+
+/// Poll /health endpoint on an arbitrary port until server is ready.
+pub async fn wait_for_ready_on_port(port: u16, timeout_secs: u64) -> Result<(), String> {
+    let url = format!("http://127.0.0.1:{}/health", port);
+    let client = reqwest::Client::new();
+    let timeout = Duration::from_secs(timeout_secs);
+    let start = tokio::time::Instant::now();
+
+    loop {
+        if start.elapsed() > timeout {
+            return Err(format!("llama-server on port {} timed out after {}s", port, timeout_secs));
+        }
+
+        match client.get(&url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                info!("llama-server on port {} is ready", port);
                 return Ok(());
             }
             _ => {

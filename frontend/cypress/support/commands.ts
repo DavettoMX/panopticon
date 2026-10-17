@@ -21,6 +21,7 @@ declare global {
       ): Chainable<void>;
       clearTauriLog(): Chainable<void>;
       setupApp(): Chainable<void>;
+      setupOrchestrator(): Chainable<void>;
       selectModel(modelName: string): Chainable<void>;
       sendChatMessage(text: string): Chainable<void>;
       simulateStreamingResponse(
@@ -103,6 +104,24 @@ Cypress.Commands.add('setupApp', function () {
               permanent_delete_conversation: null,
               send_message: null,
               rename_conversation: null,
+              // Orchestrator
+              create_orchestrator_session: 'mock-session-id',
+              start_orchestrator: null,
+              stop_orchestrator: null,
+              pause_orchestrator: null,
+              resume_orchestrator: null,
+              inject_user_message: null,
+              get_orchestrator_status: { status: 'idle', session_id: null, is_paused: false, step: 0, agents: [] },
+              estimate_team_vram: {
+                agents: [],
+                total_gpu_mb: 0,
+                total_cpu_mb: 0,
+                gpu_available_mb: 15360,
+                will_overflow: false,
+                overflow_mb: 0,
+              },
+              list_orchestrator_sessions: [],
+              get_orchestrator_log: [],
             };
           },
         });
@@ -111,6 +130,12 @@ Cypress.Commands.add('setupApp', function () {
   });
 
   cy.get('[data-cy=sidebar]').should('be.visible');
+});
+
+Cypress.Commands.add('setupOrchestrator', function () {
+  cy.setupApp();
+  cy.get('[data-cy=mode-tab-orchestrator]').click();
+  cy.get('[data-cy=team-setup]').should('be.visible');
 });
 
 Cypress.Commands.add('selectModel', (modelName: string) => {
