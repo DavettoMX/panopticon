@@ -1,47 +1,68 @@
-# Svelte + TS + Vite
+# Panopticon
 
-This template should help get you started developing with Svelte and TypeScript in Vite.
+App de escritorio para chatear con LLMs locales, inspirada en Open WebUI. Hoy funciona sobre **llama.cpp** (`llama-server`); el objetivo es **agregar inferencia con vLLM** para hacer la herramienta más potente.
 
-## Recommended IDE Setup
+Construida con **Tauri v2** (backend en Rust) y **Svelte 5 + TypeScript** (Vite).
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode).
+## Funcionalidades
 
-## Need an official Svelte framework?
+- **Chat local con streaming**: `llama-server` corre como subproceso y se comunica por su API REST compatible con OpenAI. Los tokens llegan a la UI por eventos de Tauri (`chat-token`, `chat-complete`, `chat-error`), con soporte para bloques de razonamiento ("thinking").
+- **Descubrimiento de modelos**: escanea un directorio configurable en busca de archivos `.gguf` y lee sus metadatos directamente del encabezado binario, sin herramientas externas.
+- **Centro de configuración de modelos**: clasificación SLM (<10B parámetros) / LLM (≥10B), etiquetas por tarea (coding, chat, vision…), detección de GPU con `nvidia-smi` y estimación de VRAM para cargar modelos de forma segura.
+- **Modo Orquestador (multi-agente)**: cinco roles (Orchestrator, Architect, Auditor, Constructor, Judge) que se coordinan a través de un hub central. Las respuestas de cada agente se guardan como artefactos numerados, la ejecución se pausa en checkpoints para que intervengas, y el Constructor puede proponer escribir archivos en un directorio de trabajo (siempre con tu aprobación).
+- **Persistencia local**: SQLite + `sqlite-vec` embebido para conversaciones, ajustes, etiquetas y sesiones del orquestador.
 
-Check out [SvelteKit](https://github.com/sveltejs/kit#readme), which is also powered by Vite. Deploy anywhere with its serverless-first approach and adapt to various platforms, with out of the box support for TypeScript, SCSS, and Less, and easily-added support for mdsvex, GraphQL, PostCSS, Tailwind CSS, and more.
+## Roadmap: inferencia con vLLM
 
-## Technical considerations
+llama.cpp es excelente para correr modelos GGUF cuantizados en una sola máquina, pero tiene límites cuando se necesita más rendimiento. El siguiente paso de Panopticon es **soportar vLLM como backend de inferencia**, junto a llama.cpp:
 
-**Why use this over SvelteKit?**
+- **Más throughput y concurrencia**: PagedAttention y batching continuo, útiles sobre todo en el modo Orquestador, donde varios agentes generan respuestas.
+- **Más formatos de modelo**: pesos de Hugging Face (safetensors), AWQ, GPTQ, FP8, etc.
+- **Backend seleccionable**: elegir llama.cpp o vLLM por modelo o por agente, reutilizando la misma capa de API compatible con OpenAI.
+- **Gestión del proceso de vLLM**: arranque, parada y monitoreo desde la app, igual que hoy con `llama-server`.
 
-- It brings its own routing solution which might not be preferable for some users.
-- It is first and foremost a framework that just happens to use Vite under the hood, not a Vite app.
+## Estructura del proyecto
 
-This template contains as little as possible to get started with Vite + TypeScript + Svelte, while taking into account the developer experience with regards to HMR and intellisense. It demonstrates capabilities on par with the other `create-vite` templates and is a good starting point for beginners dipping their toes into a Vite + Svelte project.
+```
+frontend/               UI en Svelte/Vite
+  src/lib/              Componentes y stores (Svelte 5 runes)
+  src/lib/orchestrator/ UI del modo Orquestador
+  src/test/             Capa de mocks de IPC de Tauri para Cypress
+  cypress/              Tests E2E, fixtures y comandos
+src-tauri/              Backend en Rust (Tauri v2)
+  src/commands/         Handlers de comandos (chat, conversations, models, orchestrator, server, settings)
+  src/db.rs             Esquema SQLite + CRUD
+  src/gguf.rs           Parser de metadatos GGUF
+  src/gpu.rs            Detección de GPU
+  src/llama.rs          Ciclo de vida de llama-server
+  src/orchestrator.rs   Estado, directivas y ciclo de vida del equipo multi-agente
+```
 
-Should you later need the extended capabilities and extensibility provided by SvelteKit, the template has been structured similarly to SvelteKit so that it is easy to migrate.
+## Requisitos
 
-**Why `global.d.ts` instead of `compilerOptions.types` inside `jsconfig.json` or `tsconfig.json`?**
+- Rust (stable), Node 22+, npm
+- Dependencias de sistema de Tauri (en Fedora: `webkit2gtk4.1-devel javascriptcoregtk4.1-devel`)
+- Un binario de [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` compilado (CUDA recomendado)
+- Modelos en formato `.gguf`
 
-Setting `compilerOptions.types` shuts out all other types not explicitly listed in the configuration. Using triple-slash references keeps the default TypeScript setting of accepting type information from the entire workspace, while also adding `svelte` and `vite/client` type information.
+Las rutas del binario de `llama-server` y del directorio de modelos se configuran desde la app.
 
-**Why include `.vscode/extensions.json`?**
+## Uso
 
-Other templates indirectly recommend extensions via the README, but this file allows VS Code to prompt the user to install the recommended extension upon opening the project.
+```bash
+npm install && (cd frontend && npm install)
 
-**Why enable `allowJs` in the TS template?**
+npm run tauri dev      # App completa en modo desarrollo
+npm run tauri build    # Build de producción
+```
 
-While `allowJs: false` would indeed prevent the use of `.js` files in the project, it does not prevent the use of JavaScript syntax in `.svelte` files. In addition, it would force `checkJs: false`, bringing the worst of both worlds: not being able to guarantee the entire codebase is TypeScript, and also having worse typechecking for the existing JavaScript. In addition, there are valid use cases in which a mixed codebase may be relevant.
+## Tests
 
-**Why is HMR not preserving my local component state?**
+Los tests E2E corren con Cypress contra el frontend usando un mock de la IPC de Tauri, así que no necesitan el runtime nativo.
 
-HMR state preservation comes with a number of gotchas! It has been disabled by default in both `svelte-hmr` and `@sveltejs/vite-plugin-svelte` due to its often surprising behavior. You can read the details [here](https://github.com/rixo/svelte-hmr#svelte-hmr).
-
-If you have state that's important to retain within a component, consider creating an external store which would not be replaced by HMR.
-
-```ts
-// store.ts
-// An extremely simple external store
-import { writable } from 'svelte/store'
-export default writable(0)
+```bash
+cd frontend
+npm run dev:test       # Vite con los mocks de Tauri
+npm run cy:open        # Cypress interactivo
+npm run cy:run         # Cypress headless
 ```
